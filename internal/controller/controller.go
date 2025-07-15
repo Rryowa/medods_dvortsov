@@ -25,7 +25,7 @@ func NewController(logger *zap.SugaredLogger, authService *service.AuthService) 
 	}
 }
 
-// CheckServer (GET /api/ping).
+// (GET /api/ping).
 func (c *Controller) CheckServer(ctx echo.Context) error {
 	ctx.JSON(http.StatusOK, "ok")
 	return nil

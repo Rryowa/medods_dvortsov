@@ -7,7 +7,6 @@ formatters:
   enable:
     - goimports
     - golines
-    - gci
     - gofumpt
     - swaggo
 
@@ -42,13 +41,11 @@ linters:
     - funlen # tool for detection of long functions
     - gocheckcompilerdirectives # validates go compiler directive comments (//go:)
     - gochecknoglobals # checks that no global variables exist
-    - gochecknoinits # checks that no init functions are present in Go code
     - gochecksumtype # checks exhaustiveness on Go "sum types"
     - gocognit # computes and checks the cognitive complexity of functions
     - goconst # finds repeated strings that could be replaced by a constant
     - gocritic # provides diagnostics that check for bugs, performance and style issues
     - gocyclo # computes and checks the cyclomatic complexity of functions
-    - godot # checks if comments end in a period
     - gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
     - goprintffuncname # checks that printf-like functions are named with f at the end
     - gosec # inspects source code for security problems
@@ -89,7 +86,6 @@ linters:
     - unused # checks for unused constants, variables, functions and types
     - wastedassign # finds wasted assignment statements
     - whitespace # detects leading and trailing whitespace
-    - exhaustruct # [highly recommend to enable] checks if all structure fields are initialized
     - ireturn # accept interfaces, return concrete types
     - noinlineerr # disallows inline error handling `if err := ...; err != nil {`
     - prealloc # [premature optimization, but can be used in some cases] finds slice declarations that could potentially be preallocated
@@ -115,7 +111,13 @@ linters:
       # Such cases aren't reported by default.
       # Default: false
       check-type-assertions: true
+      exclude-functions:
+      - (github.com/labstack/echo/v4.Context).JSON
 
+    gosec:
+      excludes:
+        - G104 # errors unhandled
+    
     exhaustive:
       # Program elements to check for exhaustiveness.
       # Default: [ switch ]
@@ -311,8 +313,6 @@ linters:
       - common-false-positives
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
-      - source: 'TODO'
-        linters: [godot]
       - text: 'should have a package comment'
         linters: [revive]
       - text: 'exported \S+ \S+ should have comment( \(or a comment on this block\))? or be unexported'

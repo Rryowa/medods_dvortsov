@@ -2,18 +2,23 @@ package main
 
 import (
 	"context"
+
+	"github.com/rryowa/medods_dvortsov/internal/api"
+	"github.com/rryowa/medods_dvortsov/internal/controller"
+	"github.com/rryowa/medods_dvortsov/internal/service"
+	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
 func main() {
 	ctx := context.Background()
-	dbConfig := util.NewDBConfig()
-	serviceConfig := util.NewServiceConfig()
-	zapLogger := util.NewZapLogger()
-	storage := postgres.NewPostgresRepository(ctx, dbConfig, zapLogger)
-	authService := service.NewAuthService(storage)
-	controller := controller.NewController(zapLogger, authService)
 
-	app := api.NewAPI(controller, zapLogger, serviceConfig)
+	logger := util.NewZapLogger()
 
-	app.Run(ctx)
+	manager := service.NewInMemoryRefreshTokenManager()
+	authService := service.NewAuthService(manager, util.JWTSecret())
+
+	ctrl := controller.NewController(logger, authService)
+	apiServer := api.NewAPI(ctrl, logger, util.NewServerConfig())
+
+	apiServer.Run(ctx)
 }
