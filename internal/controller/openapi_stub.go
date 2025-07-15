@@ -16,5 +16,11 @@ func GetSwagger() (*openapi3.T, error) {
 func RegisterHandlersWithBaseURL(e *echo.Echo, c *Controller, base string) {
 	g := e.Group(base)
 	g.GET("/ping", c.CheckServer)
-	// TODO: register auth routes
+
+	// Auth routes
+	ag := g.Group("/auth")
+	ag.POST("/token/issue", c.IssueTokens)
+	ag.POST("/token/refresh", c.RefreshTokens)
+	ag.POST("/logout", c.Logout)
+	ag.GET("/user/guid", c.GetUserGUID)
 }

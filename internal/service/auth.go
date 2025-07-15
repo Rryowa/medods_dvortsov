@@ -127,3 +127,20 @@ func (s *AuthService) extractUserID(tokenStr string) (string, error) {
 	}
 	return claims.UserID, nil
 }
+
+func (s *AuthService) ValidateAccessToken(tokenStr string) (string, error) {
+	token, err := jwt.ParseWithClaims(
+		tokenStr,
+		&jwtClaims{},
+		func(t *jwt.Token) (interface{}, error) { return s.secretKey, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}),
+	)
+	if err != nil {
+		return "", err
+	}
+	claims, ok := token.Claims.(*jwtClaims)
+	if !ok || !token.Valid {
+		return "", errors.New("invalid access token")
+	}
+	return claims.UserID, nil
+}
