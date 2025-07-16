@@ -1,0 +1,6 @@
+package: controller
+output: controller.gen.go
+generate:
+  models: true
+  echo-server: true
+  embedded-spec: true

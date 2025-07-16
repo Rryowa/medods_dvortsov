@@ -1,14 +1,27 @@
 package storage
 
-import "context"
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/rryowa/medods_dvortsov/internal/models"
+)
+
+var ErrSessionNotFound = errors.New("session not found")
 
 type Storage interface {
-	Authentificator
+	SessionRepository
+	APIKeyRepository
 }
 
-type Authentificator interface {
-	GetAccessAndRefreshTokens(ctx context.Context, username string) (string, string, error)
-	UpdateAccessAndRefreshTokens(ctx context.Context, username, accessToken, refreshToken string) error
-	GetGuidOfUser(ctx context.Context, username string) (string, error)
-	UnathorizeUser(ctx context.Context, username string) error
+type APIKeyRepository interface {
+	GetAPIKey(ctx context.Context, apiKey string) (*models.APIKey, error)
+}
+
+type SessionRepository interface {
+	CreateSession(ctx context.Context, session models.RefreshSession, ttl time.Duration) error
+	GetCurrentSession(ctx context.Context, refreshToken string) (*models.RefreshSession, error)
+	DeleteSession(ctx context.Context, refreshToken string) error
+	DeleteAllUserSessions(ctx context.Context, userID string) error
 }

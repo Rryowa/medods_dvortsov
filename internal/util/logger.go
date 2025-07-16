@@ -9,7 +9,7 @@ import (
 
 func NewZapLogger() *zap.SugaredLogger {
 	stdout := zapcore.AddSync(os.Stdout)
-	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+	level := zap.NewAtomicLevelAt(zap.DebugLevel)
 
 	developmentCfg := zap.NewDevelopmentEncoderConfig()
 	developmentCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
@@ -20,5 +20,11 @@ func NewZapLogger() *zap.SugaredLogger {
 		zapcore.NewCore(consoleEncoder, stdout, level),
 	)
 
-	return zap.New(core).Sugar()
+	logger := zap.New(core,
+		zap.AddCaller(),
+		zap.AddCallerSkip(0),
+		zap.AddStacktrace(zap.ErrorLevel),
+	)
+
+	return logger.Sugar()
 }

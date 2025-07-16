@@ -65,7 +65,6 @@ linters:
     - nilnil # checks that there is no simultaneous return of nil error and an invalid value
     - noctx # finds sending http request without context.Context
     - nolintlint # reports ill-formed or insufficient nolint directives
-    - nonamedreturns # reports all named returns
     - nosprintfhostport # checks for misuse of Sprintf to construct a host with port in a URL
     - perfsprint # checks that fmt.Sprintf can be replaced with a faster alternative
     - predeclared # finds code that shadows one of Go's predeclared identifiers
@@ -87,7 +86,6 @@ linters:
     - wastedassign # finds wasted assignment statements
     - whitespace # detects leading and trailing whitespace
     - ireturn # accept interfaces, return concrete types
-    - noinlineerr # disallows inline error handling `if err := ...; err != nil {`
     - prealloc # [premature optimization, but can be used in some cases] finds slice declarations that could potentially be preallocated
     - wrapcheck # checks that errors returned from external packages are wrapped
 

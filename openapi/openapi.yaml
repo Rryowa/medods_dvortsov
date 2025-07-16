@@ -1,0 +1,188 @@
+openapi: 3.0.3
+info:
+  title: Auth Service API
+  version: 1.0.0
+  description: |
+    API для аутентификации пользователей (выдача, обновление, отзыв токенов, получение GUID).
+servers:
+  - url: /api
+security:
+  - BasicAuth: []
+paths:
+  /auth/token/issue:
+    post:
+      operationId: IssueTokens
+      summary: Выдать новую пару токенов для пользователя
+      description: |
+        Возвращает новую пару access/refresh токенов для пользователя с указанным GUID.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: GUID пользователя
+      responses:
+        '200':
+          description: Пара токенов выдана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/token/refresh:
+    post:
+      operationId: RefreshTokens
+      summary: Обновить пару токенов
+      description: |
+        Обновляет access/refresh токены по refresh_token. Требует Basic Auth (client_id/client_secret).
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - refresh_token
+              properties:
+                grant_type:
+                  type: string
+                  enum: [refresh_token]
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Пара токенов обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Ошибка аутентификации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/logout:
+    post:
+      operationId: Logout
+      summary: Деавторизация пользователя
+      description: |
+        Удаляет все refresh-сессии пользователя (отзыв токенов). В теле — user_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Успешно
+        '400':
+          description: Некорректный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/user/guid:
+    get:
+      operationId: GetUserGUID
+      summary: Получить GUID текущего пользователя
+      description: |
+        Возвращает GUID пользователя по access-токену (Bearer).
+      
+      responses:
+        '200':
+          description: GUID пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserGUIDResponse'
+        '401':
+          description: Неавторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BasicAuth:
+      type: http
+      scheme: basic
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TokenPairResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+      required:
+        - access_token
+        - refresh_token
+
+    TokenRefreshRequest:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+      required:
+        - refresh_token
+
+    UserGUIDResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+      required:
+        - user_id
+
+    LogoutRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+      required:
+        - user_id
+
+    ErrorResponse:
+      type: object
+      properties:
+        reason:
+          type: string
+      required:
+        - reason 

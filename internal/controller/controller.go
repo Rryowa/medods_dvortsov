@@ -1,99 +1,115 @@
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=openapi/cfg.yaml openapi/yaml
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=../../openapi/cfg.yaml ../../openapi/openapi.yaml
 
 package controller
 
 import (
-	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 
 	"github.com/rryowa/medods_dvortsov/internal/models"
 	"github.com/rryowa/medods_dvortsov/internal/service"
-	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
 type Controller struct {
-	zapLogger   *zap.SugaredLogger
-	authService *service.AuthService
+	zapLogger    *zap.SugaredLogger
+	authService  *service.AuthService
+	tokenService *service.TokenService
 }
 
-func NewController(logger *zap.SugaredLogger, authService *service.AuthService) *Controller {
+func NewController(logger *zap.SugaredLogger, authService *service.AuthService, tokenService *service.TokenService) *Controller {
 	return &Controller{
-		zapLogger:   logger,
-		authService: authService,
+		zapLogger:    logger,
+		authService:  authService,
+		tokenService: tokenService,
 	}
 }
 
-// GET /api/ping
-func (c *Controller) CheckServer(ctx echo.Context) error {
+// Healthcheck (GET /api/ping)
+func (c *Controller) Healthcheck(ctx echo.Context) error {
 	ctx.JSON(http.StatusOK, "ok")
 	return nil
 }
 
-// POST /api/auth/token/issue
-func (c *Controller) IssueTokens(ctx echo.Context) error {
-	var req models.TokenIssueRequest
-	if err := ctx.Bind(&req); err != nil {
-		return InternalError(ctx, err)
-	}
+// IssueTokens (POST /api/auth/token/issue)
+func (c *Controller) IssueTokens(ctx echo.Context, params IssueTokensParams) error {
+	req := ctx.Request()
+	userAgent := req.UserAgent()
+	clientID := ctx.Get("client_id").(string)
+	ipAddress := ctx.RealIP()
 
-	ua := ctx.Request().UserAgent()
-	ip := ctx.RealIP()
-
-	access, refresh, err := c.authService.IssueTokens(ctx.Request().Context(), req.UserID, ua, ip)
+	access, refresh, err := c.authService.IssueTokens(
+		req.Context(),
+		params.UserId.String(),
+		models.UserMetadata{
+			UserAgent: userAgent,
+			ClientID:  clientID,
+			IPAddress: ipAddress,
+		},
+	)
 	if err != nil {
-		return InternalError(ctx, err)
+		return err
 	}
 
-	return ctx.JSON(http.StatusOK, models.TokenPairResponse{AccessToken: access, RefreshToken: refresh})
+	return ctx.JSON(http.StatusOK, TokenPairResponse{AccessToken: access, RefreshToken: refresh})
 }
 
-// POST /api/auth/token/refresh
+// RefreshTokens (POST /api/auth/token/refresh)
 func (c *Controller) RefreshTokens(ctx echo.Context) error {
-	var req models.TokenRefreshRequest
-	if err := ctx.Bind(&req); err != nil {
-		return InternalError(ctx, err)
+	var tokenRefreshReq TokenRefreshRequest
+	if err := ctx.Bind(&tokenRefreshReq); err != nil {
+		return err
 	}
 
-	ua := ctx.Request().UserAgent() // FIXME: возможно нужно определять через библиотеку
-	ip := ctx.RealIP()              // FIXME: возможно нужно определять через библиотеку
+	req := ctx.Request()
+	userAgent := req.UserAgent()
+	clientID := ctx.Get("client_id").(string)
+	ipAddress := ctx.RealIP()
 
-	access, refresh, err := c.authService.RefreshTokens(ctx.Request().Context(), req.AccessToken, req.RefreshToken, ua, ip)
+	access, refresh, err := c.authService.RefreshTokens(
+		ctx.Request().Context(),
+		tokenRefreshReq.RefreshToken,
+		models.UserMetadata{
+			UserAgent: userAgent,
+			ClientID:  clientID,
+			IPAddress: ipAddress,
+		},
+	)
 	if err != nil {
-		return InternalError(ctx, err)
+		return err
 	}
 
-	return ctx.JSON(http.StatusOK, models.TokenPairResponse{AccessToken: access, RefreshToken: refresh})
+	return ctx.JSON(http.StatusOK, TokenPairResponse{AccessToken: access, RefreshToken: refresh})
 }
 
-// POST /api/auth/logout
+// Logout (POST /api/auth/logout)
 func (c *Controller) Logout(ctx echo.Context) error {
-	var req models.LogoutRequest
+	var req LogoutRequest
 	if err := ctx.Bind(&req); err != nil {
-		return InternalError(ctx, err)
+		return err
 	}
 
-	if err := c.authService.Logout(ctx.Request().Context(), req.UserID); err != nil {
-		return InternalError(ctx, err)
+	if err := c.authService.Logout(ctx.Request().Context(), req.UserId.String()); err != nil {
+		return err
 	}
 	return ctx.NoContent(http.StatusOK)
 }
 
-// GET /api/auth/user/guid (protected)
+// GetUserGUID (GET /api/auth/user/guid) protected
 func (c *Controller) GetUserGUID(ctx echo.Context) error {
 	token := extractBearer(ctx.Request().Header.Get("Authorization"))
 	if token == "" {
-		return ctx.JSON(http.StatusUnauthorized, ErrorResponse{Reason: "missing bearer token"})
+		return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
 	}
 
-	uid, err := c.authService.ValidateAccessToken(token)
+	uid, err := c.tokenService.ValidateAccessTokenAndGetUserID(token)
 	if err != nil {
-		return ctx.JSON(http.StatusUnauthorized, ErrorResponse{Reason: err.Error()})
+		return err
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]string{"user_id": uid})
+	return ctx.JSON(http.StatusOK, UserGUIDResponse{UserId: uuid.MustParse(uid)})
 }
 
 func extractBearer(h string) string {
@@ -102,15 +118,4 @@ func extractBearer(h string) string {
 		return h[len(prefix):]
 	}
 	return ""
-}
-
-func InternalError(ctx echo.Context, err error) error {
-	var customErr util.MyResponseError
-	if errors.As(err, &customErr) {
-		ctx.JSON(customErr.Status, ErrorResponse{Reason: customErr.Msg})
-		return err
-	}
-
-	ctx.JSON(http.StatusInternalServerError, ErrorResponse{Reason: err.Error()})
-	return err
 }

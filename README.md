@@ -1,3 +1,5 @@
+go1.24.0 потому что в нем есть удобная поддержка go tools для вызова oapi-codegen
+
 ## REST API 
 Как я понял Service-to-service, потому что в требованиях нет OIDC ( response_type=id_token … , openid-scope, nonce и тд)  
 тогда как для браузера/мобилки чаще применяют PKCE + OIDC
@@ -7,12 +9,11 @@
 В Postman
 
 ```sh
-Добавьте заголовок `Authorization`
-    - `Basic Auth`
+Вкладка `Authorization` -> `Basic Auth`
     - Username: `client_id` (например, `my-auth-server`)
-    - Password: ваш `client_secret` (например, `secret_key_123`)
-   Postman автоматически сформирует заголовок:
-        `Authorization: Basic bXktYXV0aC1zZXJ2ZXI6c2VjcmV0X2tleV8xMjM=`
+    - Password: `client_secret` (например, `123`)
+    Postman автоматически сформирует заголовок:
+    `Authorization: Basic bXktYXV0aC1zZXJ2ZXI6c2VjcmV0X2tleV8xMjM=`
 ```
 
 Base URL: `http://localhost:8080/api`
