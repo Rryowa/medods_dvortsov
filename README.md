@@ -2,6 +2,26 @@ Postman коллекция https://www.postman.com/rryowa/workspace/medods-asdvo
 
 Base URL: `http://localhost:8080/api/v1`
 
+пример .env:
+
+JWT_SECRET и AUTH_SERVICE_API_KEY можно сгенерировать с помощью `make keygen`
+Также рандомный GUID генерируется при старте сервиса
+
+```shell
+JWT_SECRET=XXX
+AUTH_SERVICE_API_KEY=XXX
+
+REDIS_ADDR=localhost:6379
+
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=secret
+POSTGRES_DB=mydb
+SSL=disable
+DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=${SSL}
+
+WEBHOOK_URL=http://localhost:9090
+```
+
 Как я понял Service-to-service, потому что в требованиях нет OIDC ( response_type=id_token … , openid-scope, nonce и тд)  
 тогда как для браузера/мобилки чаще применяют PKCE + OIDC
 
@@ -180,6 +200,7 @@ Base URL: `/api/v1`
 4.  В течение 24 часов система будет принимать запросы как со старым, так и с новым API-ключом.
 
 ### 5. Webhook-уведомления
+
 - **Событие**: Смена IP-адреса при обновлении токена (`/auth/tokens/refresh`).
 - **Действие**: Отправляет `POST` запрос на `WEBHOOK_URL`.
 - **Payload**: `user_id`, `old_ip`, `new_ip`, `user_agent`.
