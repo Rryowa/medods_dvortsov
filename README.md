@@ -1,24 +1,39 @@
 Postman коллекция https://www.postman.com/rryowa/workspace/medods-asdvortsov/collection/27242165-76b440dd-ddaa-48a1-abb5-1e9bc8123513?action=share&creator=27242165&active-environment=27242165-a497a243-c116-4c4a-b09b-bf4e3d99d884
 
+### Запуск приложения в докере
+
+(Поддерживается кэширование для ускорения рестарта (3 сек вместо 20))
+
+Run:
+
+```shell
+make up
+```
+
+Restart:
+
+```shell
+make restart
+```
+
 Base URL: `http://localhost:8080/api/v1`
 
 пример .env:
 
-JWT_SECRET и AUTH_SERVICE_API_KEY можно сгенерировать с помощью `make keygen`
+JWT_SECRET и AUTH_SERVICE_API_KEY можно сгенерировать с помощью `make keygen`  
 Также рандомный GUID генерируется при старте сервиса
 
 ```shell
-JWT_SECRET=XXX
-AUTH_SERVICE_API_KEY=XXX
-
-REDIS_ADDR=localhost:6379
-
 POSTGRES_USER=admin
 POSTGRES_PASSWORD=secret
 POSTGRES_DB=mydb
 SSL=disable
-DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=${SSL}
+DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=${SSL}
 
+JWT_SECRET=5jXF/NSqIR/oLPRJVJVRb4Wjf4wArVQarg6Mf7hdSYI=
+AUTH_SERVICE_API_KEY=lpu+oZbnIMhw8NcJmThnNRDSsvPclt51rb8mqt5PinQ=
+
+REDIS_ADDR=localhost:6379
 WEBHOOK_URL=http://localhost:9090
 ```
 
