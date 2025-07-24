@@ -138,7 +138,7 @@ func (as *AuthService) RefreshTokens(
 	}
 
 	// Проверка ip
-	// comment if condition to test webhook
+	//TODO: comment condition to test webhook
 	if activeSession.IPAddress != userMetadata.IPAddress {
 		as.log.Infow("ip address changed, sending webhook notification", "sessionID", activeSession.ID)
 		as.webhookService.NotifyIPChange(ctx, map[string]any{
