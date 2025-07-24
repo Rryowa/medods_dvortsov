@@ -45,12 +45,15 @@ func (c *Controller) IssueTokens(ctx echo.Context, params IssueTokensParams) err
 		},
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("issue tokens: %w", err)
 	}
 
 	setRefreshCookie(ctx, refresh)
 
-	return ctx.JSON(http.StatusOK, TokensResponse{AccessToken: access})
+	if err := ctx.JSON(http.StatusOK, TokensResponse{AccessToken: access}); err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+	return nil
 }
 
 // RefreshTokens (POST /api/auth/tokens/refresh)
@@ -102,7 +105,10 @@ func (c *Controller) RefreshTokens(ctx echo.Context) error {
 
 	setRefreshCookie(ctx, newRefresh)
 
-	return ctx.JSON(http.StatusOK, TokensResponse{AccessToken: newAccess})
+	if err := ctx.JSON(http.StatusOK, TokensResponse{AccessToken: newAccess}); err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+	return nil
 }
 
 func (c *Controller) Logout(ctx echo.Context) error {
@@ -111,12 +117,15 @@ func (c *Controller) Logout(ctx echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "access token not found in context")
 	}
 	if err := c.authService.Logout(ctx.Request().Context(), token); err != nil {
-		return err
+		return fmt.Errorf("logout: %w", err)
 	}
 
 	clearRefreshCookie(ctx)
 
-	return ctx.NoContent(http.StatusNoContent)
+	if err := ctx.NoContent(http.StatusNoContent); err != nil {
+		return fmt.Errorf("no content: %w", err)
+	}
+	return nil
 }
 
 // GetUserGUID возвращает публичный GUID пользователя.
@@ -133,7 +142,10 @@ func (c *Controller) GetUserGUID(ctx echo.Context) error {
 		return fmt.Errorf("get public GUID: %w", err)
 	}
 
-	return ctx.JSON(http.StatusOK, UserGUIDResponse{UserId: uuid.MustParse(guid)})
+	if err := ctx.JSON(http.StatusOK, UserGUIDResponse{UserId: uuid.MustParse(guid)}); err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+	return nil
 }
 
 func setRefreshCookie(ctx echo.Context, token string) {
@@ -142,7 +154,7 @@ func setRefreshCookie(ctx echo.Context, token string) {
 	cookie.Value = token
 	cookie.HttpOnly = true
 	cookie.Path = "/api/v1/auth"
-	//FIXME: В prod должен быть true
+	// FIXME: В prod должен быть true
 	cookie.Secure = false
 	cookie.SameSite = http.SameSiteStrictMode
 	ctx.SetCookie(cookie)

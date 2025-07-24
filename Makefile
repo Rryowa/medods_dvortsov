@@ -22,12 +22,6 @@ down:
 	docker compose down -v
 
 lint:
-	golangci-lint run ./...
-
-lint-fast:
-	golangci-lint run ./... --fast
-
-lint-fix:
 	golangci-lint run ./... --fix
 
 gen:

@@ -2,6 +2,7 @@ package models
 
 import "time"
 
+//nolint:gosec //file not handles sensitive data
 const (
 	MwSchemeAPIKeyAuth = "ApiKeyAuth"
 	MwSchemeBearerAuth = "BearerAuth"

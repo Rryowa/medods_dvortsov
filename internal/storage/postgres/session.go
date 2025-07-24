@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/rryowa/medods_dvortsov/internal/models"
 	"github.com/rryowa/medods_dvortsov/internal/storage"
@@ -18,17 +17,31 @@ func NewSessionRepository(db storage.DBTX) *SessionRepository {
 	return &SessionRepository{db: db}
 }
 
-func (r *SessionRepository) CreateSession(ctx context.Context, session models.RefreshSession, ttl time.Duration) (int64, error) {
+func (r *SessionRepository) CreateSession(ctx context.Context, session models.RefreshSession) (int64, error) {
 	query := `INSERT INTO sessions (user_id, selector, verifier_hash, client_ip, user_agent, expires_at, created_at, access_token_jti) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
 	var id int64
-	err := r.db.QueryRowContext(ctx, query, session.UserID, session.Selector, session.VerifierHash, session.IPAddress, session.UserAgent, session.ExpiresAt, session.CreatedAt, session.AccessTokenJTI).Scan(&id)
+	err := r.db.QueryRowContext(
+		ctx,
+		query,
+		session.UserID,
+		session.Selector,
+		session.VerifierHash,
+		session.IPAddress,
+		session.UserAgent,
+		session.ExpiresAt,
+		session.CreatedAt,
+		session.AccessTokenJTI,
+	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert session: %w", err)
 	}
 	return id, nil
 }
 
-func (r *SessionRepository) GetActiveSessionBySelector(ctx context.Context, selector string) (*models.RefreshSession, error) {
+func (r *SessionRepository) GetActiveSessionBySelector(
+	ctx context.Context,
+	selector string,
+) (*models.RefreshSession, error) {
 	var session models.RefreshSession
 	query := `SELECT id, user_id, selector, verifier_hash, client_ip, user_agent, expires_at, created_at, access_token_jti FROM sessions WHERE selector = $1 AND status = 'active'`
 	err := r.db.QueryRowContext(ctx, query, selector).Scan(
@@ -51,7 +64,10 @@ func (r *SessionRepository) GetActiveSessionBySelector(ctx context.Context, sele
 	return &session, nil
 }
 
-func (r *SessionRepository) FindSessionBySelector(ctx context.Context, selector string) (*models.RefreshSession, error) {
+func (r *SessionRepository) FindSessionBySelector(
+	ctx context.Context,
+	selector string,
+) (*models.RefreshSession, error) {
 	var session models.RefreshSession
 	query := `SELECT id, user_id, selector, verifier_hash, client_ip, user_agent, expires_at, created_at, access_token_jti FROM sessions WHERE selector = $1`
 	err := r.db.QueryRowContext(ctx, query, selector).Scan(

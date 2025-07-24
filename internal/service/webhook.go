@@ -9,6 +9,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	defaultHTTPStatusThreshold = 300
+)
+
 type WebhookService struct {
 	client     *http.Client
 	log        *zap.SugaredLogger
@@ -49,7 +53,7 @@ func (s *WebhookService) NotifyIPChange(ctx context.Context, data map[string]int
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode >= 300 {
+		if resp.StatusCode >= defaultHTTPStatusThreshold {
 			s.log.Warnw("webhook returned non-2xx status", "status", resp.StatusCode)
 		}
 	}()

@@ -20,7 +20,7 @@ func main() {
 	ctx := context.Background()
 	logger := util.NewZapLogger()
 
-	db, dbCleanup, err := util.NewDBConnection(logger)
+	db, dbCleanup, err := util.NewDBConnection(ctx, logger)
 	if err != nil {
 		logger.Fatal(zap.Error(err))
 	}
@@ -48,6 +48,15 @@ func main() {
 
 	controller := controller.NewController(authService, logger)
 
-	apiServer := api.NewAPI(controller, authService, redisClient, apiKeyService, util.NewServerConfig(), logger, cleanupFuncs)
+	apiServer := api.NewAPI(
+		controller,
+		authService,
+		apiKeyService,
+		redisClient,
+		util.NewServerConfig(),
+		logger,
+		cleanupFuncs,
+	)
+
 	apiServer.Run(ctx)
 }

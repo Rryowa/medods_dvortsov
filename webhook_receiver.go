@@ -5,10 +5,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
+)
+
+const (
+	defaultWebhookReadTimeout  = 5 * time.Second
+	defaultWebhookWriteTimeout = 10 * time.Second
+	defaultWebhookIdleTimeout  = 120 * time.Second
 )
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Only POST method is accepted", http.StatusMethodNotAllowed)
 			return
@@ -33,13 +41,22 @@ func main() {
 		log.Printf("  New IP: %s", data["new_ip"])
 		log.Printf("  User Agent: %s", data["user_agent"])
 
-
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Webhook received!"))
+		if _, err := w.Write([]byte("Webhook received!")); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 	})
 
+	server := &http.Server{
+		Addr:         ":9090",
+		Handler:      mux,
+		ReadTimeout:  defaultWebhookReadTimeout,
+		WriteTimeout: defaultWebhookWriteTimeout,
+		IdleTimeout:  defaultWebhookIdleTimeout,
+	}
+
 	log.Println("Webhook receiver listening on :9090")
-	if err := http.ListenAndServe(":9090", nil); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

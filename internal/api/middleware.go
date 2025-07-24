@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,11 +20,14 @@ import (
 	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
-func NewAuthenticator(authService *service.AuthService, apiKeyService *service.APIKeyService) openapi3filter.AuthenticationFunc {
+func NewAuthenticator(
+	authService *service.AuthService,
+	apiKeyService *service.APIKeyService,
+) openapi3filter.AuthenticationFunc {
 	return func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
 		echoCtx, ok := ctx.Value(middleware.EchoContextKey).(echo.Context)
 		if !ok {
-			return fmt.Errorf("failed to get echo.Context from request context")
+			return errors.New("failed to get echo.Context from request context")
 		}
 
 		switch input.SecuritySchemeName {
@@ -78,8 +82,11 @@ func NewAuthenticator(authService *service.AuthService, apiKeyService *service.A
 //
 //	interval: окно для подсчета запросов
 //	blockTime: Длительность блокировки после превышения лимита (0 = без блокировки)
-//
-func RateLimiter(redisClient *redis.Client, log *zap.SugaredLogger, config *util.RateLimiterConfig) echo.MiddlewareFunc {
+func RateLimiter(
+	redisClient *redis.Client,
+	_ *zap.SugaredLogger,
+	config *util.RateLimiterConfig,
+) echo.MiddlewareFunc {
 	/*
 		Без Lua скрипта:
 		Между INCR и ExpireNX могут вклиниться другие запросы

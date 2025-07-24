@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
+//nolint:gochecknoglobals // here its ok
 var once sync.Once
 
 func init() {
@@ -33,6 +34,10 @@ const (
 	defaultRateLimit     = 100
 	defaultRateInterval  = 1 * time.Minute
 	defaultRateBlockTime = 5 * time.Minute
+
+	TokenPartsExpected = 2
+	RawTokenLength     = 32
+	JWTLeeWay          = 5 * time.Second
 )
 
 type ServerConfig struct {

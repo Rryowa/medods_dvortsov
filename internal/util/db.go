@@ -1,7 +1,9 @@
 package util
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 
@@ -41,15 +43,15 @@ func NewRedisConfig() *RedisConfig {
 	}
 }
 
-func NewDBConnection(logger *zap.SugaredLogger) (*sql.DB, func(), error) {
+func NewDBConnection(ctx context.Context, logger *zap.SugaredLogger) (*sql.DB, func(), error) {
 	dbConfig := NewDBConfig()
 	db, err := sql.Open("postgres", dbConfig.DSN)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("sql open: %w", err)
 	}
 
-	if err = db.Ping(); err != nil {
-		return nil, nil, err
+	if err = db.PingContext(ctx); err != nil {
+		return nil, nil, fmt.Errorf("db ping context: %w", err)
 	}
 
 	logger.Info("Successfully connected to database!")

@@ -36,7 +36,15 @@ type API struct {
 	shutdownFuncs   []func()
 }
 
-func NewAPI(c *controller.Controller, authService *service.AuthService, rdb *redis.Client, aks *service.APIKeyService, sc *util.ServerConfig, l *zap.SugaredLogger, shutdownFuncs []func()) *API {
+func NewAPI(
+	c *controller.Controller,
+	authService *service.AuthService,
+	aks *service.APIKeyService,
+	rdb *redis.Client,
+	sc *util.ServerConfig,
+	l *zap.SugaredLogger,
+	shutdownFuncs []func(),
+) *API {
 	e := echo.New()
 
 	e.Server.Addr = sc.ServerAddr

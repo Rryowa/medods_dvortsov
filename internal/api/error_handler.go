@@ -22,11 +22,12 @@ func ErrorHandler(log *zap.SugaredLogger) echo.HTTPErrorHandler {
 			return
 		}
 
-		he, ok := err.(*echo.HTTPError)
-		if ok {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
 			if he.Code == http.StatusInternalServerError {
 				log.Errorw("HTTP error", "error", err, "uri", c.Request().RequestURI)
 			}
+			//nolint:errcheck // useless here
 			if err := c.JSON(he.Code, map[string]string{"reason": he.Message.(string)}); err != nil {
 				log.Errorw("failed to write json response", "error", err)
 			}

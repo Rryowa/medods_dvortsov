@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/google/uuid"
 	"github.com/rryowa/medods_dvortsov/internal/models"
 	"github.com/rryowa/medods_dvortsov/internal/storage"
+	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
 type AuthService struct {
@@ -51,7 +52,7 @@ func (as *AuthService) IssueTokens(
 
 	jti := uuid.NewString()
 
-	refreshToken, selector, verifierHash, err := as.tokenService.CreateRefreshToken(now)
+	refreshToken, selector, verifierHash, err := as.tokenService.CreateRefreshToken()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create refresh token: %w", err)
 	}
@@ -112,7 +113,7 @@ func (as *AuthService) RefreshTokens(
 
 	// Найти активную сессию по refresh-токену.
 	parts := strings.Split(refreshToken, ".")
-	if len(parts) != 2 {
+	if len(parts) != util.TokenPartsExpected {
 		return "", "", errors.New("invalid refresh token format")
 	}
 	selector := parts[0]
@@ -159,7 +160,7 @@ func (as *AuthService) RefreshTokens(
 		return "", "", fmt.Errorf("failed to create new access token: %w", err)
 	}
 
-	newRefreshToken, newSelector, newVerifierHash, err := as.tokenService.CreateRefreshToken(now)
+	newRefreshToken, newSelector, newVerifierHash, err := as.tokenService.CreateRefreshToken()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create new refresh token: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/rryowa/medods_dvortsov/internal/models"
 	"github.com/rryowa/medods_dvortsov/internal/storage"
@@ -24,15 +25,17 @@ func NewStorage(db *sql.DB) *Storage {
 	}
 }
 
-// IssueTokensTx выполняет транзакцию по выпуску токенов.
-// Логика работы "get or create"
-// У нового пользователя будет свой GUID, а не из запроса.
+// IssueTokensTx выполняет транзакцию по выпуску токенов
 func (s *Storage) IssueTokensTx(ctx context.Context, guid string, session models.RefreshSession) (*models.User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && !errors.Is(rerr, sql.ErrTxDone) {
+			log.Printf("failed to rollback transaction: %v", rerr)
+		}
+	}()
 
 	userRepoTx := NewUserRepository(tx)
 	sessionRepoTx := NewSessionRepository(tx)
@@ -50,7 +53,7 @@ func (s *Storage) IssueTokensTx(ctx context.Context, guid string, session models
 	}
 
 	session.UserID = user.ID
-	_, err = sessionRepoTx.CreateSession(ctx, session, 0)
+	_, err = sessionRepoTx.CreateSession(ctx, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session in tx: %w", err)
 	}
@@ -62,14 +65,23 @@ func (s *Storage) IssueTokensTx(ctx context.Context, guid string, session models
 	return user, nil
 }
 
-// RotateTokensTx выполняет транзакцию по ротации refresh-токенов.
-// Старая сессия помечается как 'used', создается новая.
-func (s *Storage) RotateTokensTx(ctx context.Context, oldSelector string, newSession models.RefreshSession, userID int64) (*models.User, error) {
+// RotateTokensTx выполняет транзакцию по ротации refresh-токенов
+// Старая сессия помечается как 'used', создается новая
+func (s *Storage) RotateTokensTx(
+	ctx context.Context,
+	oldSelector string,
+	newSession models.RefreshSession,
+	userID int64,
+) (*models.User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && !errors.Is(rerr, sql.ErrTxDone) {
+			log.Printf("failed to rollback transaction: %v", rerr)
+		}
+	}()
 
 	sessionRepoTx := NewSessionRepository(tx)
 	userRepoTx := NewUserRepository(tx)
@@ -79,7 +91,7 @@ func (s *Storage) RotateTokensTx(ctx context.Context, oldSelector string, newSes
 	}
 
 	newSession.UserID = userID
-	if _, err := sessionRepoTx.CreateSession(ctx, newSession, 0); err != nil {
+	if _, err := sessionRepoTx.CreateSession(ctx, newSession); err != nil {
 		return nil, fmt.Errorf("failed to create new session in tx: %w", err)
 	}
 
