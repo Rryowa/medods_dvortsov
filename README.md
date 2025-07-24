@@ -1,43 +1,186 @@
-go1.24.0 потому что в нем есть удобная поддержка go tools для вызова oapi-codegen
+Postman коллекция https://www.postman.com/rryowa/workspace/medods-asdvortsov/collection/27242165-76b440dd-ddaa-48a1-abb5-1e9bc8123513?action=share&creator=27242165&active-environment=27242165-a497a243-c116-4c4a-b09b-bf4e3d99d884
 
-## REST API 
+Base URL: `http://localhost:8080/api/v1`
+
 Как я понял Service-to-service, потому что в требованиях нет OIDC ( response_type=id_token … , openid-scope, nonce и тд)  
 тогда как для браузера/мобилки чаще применяют PKCE + OIDC
 
-Поэтому я сделал clientId + Client-secret аутентификацию(для нового клиента выдаем эти реквизиты, по ним же сможем настраивать для конкретного клиента разные приколы)
+По идее сервис работает с API Gateway - единая точка входа
 
-В Postman
+1.  Клиент делает запрос с access-токеном в API Gateway
+2.  Gateway перехватывает запрос, проверяет токен и проксирует запрос к нужному микросервису
+3.  Для операций с токенами (выпуск, обновление) Gateway это доверенный клиент -
+    он добавляет свой `X-API-Key` и перенаправляет запрос в этот сервис. (Реализована zero-downtime замена API ключа)
 
-```sh
-Вкладка `Authorization` -> `Basic Auth`
-    - Username: `client_id` (например, `my-auth-server`)
-    - Password: `client_secret` (например, `123`)
-    Postman автоматически сформирует заголовок:
-    `Authorization: Basic bXktYXV0aC1zZXJ2ZXI6c2VjcmV0X2tleV8xMjM=`
+## Архитектура
+
+```mermaid
+graph TD
+    subgraph "API Layer (Presentation)"
+        A[API Middleware]
+        B[Controller]
+    end
+
+    subgraph "Service Layer (Business Logic)"
+        C[AuthService]
+        D[APIKeyService]
+        E[TokenService]
+    end
+
+    subgraph "Storage Layer (Data Access)"
+        F[storage.Storage]
+        G[storage.UserRepository]
+        H[storage.SessionRepository]
+    end
+
+    subgraph "Infrastructure (DB/Cache)"
+        I[Postgres]
+        J[Redis]
+    end
+
+    %% Define Dependencies
+    A -- "Валидация через" --> C & D
+    A -- "Маршрутизация к" --> B
+    B -- "Использует" --> C & E
+    C -- "Зависит от" --> E & F
+    D -- "Зависит от" --> J
+    F -- "Реализован в" --> I
 ```
 
-Base URL: `http://localhost:8080/api`
+- **API Layer**: прием HTTP, валидация, передача в слой бизнес-логики
+- **Service Layer**: Бизнес-логикаа - Не зависит от деталей бд
+- **Storage Layer**: Интерфейсы для работы с данными + **транзакционная логика**
+- **Infrastructure**: Токены и сессии - PostgreSQL, Кэш, denylist, RateLimiter - Redis
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET    | `/ping`                  | Health-check  
-| POST   | `/auth/token/issue`      | Issue a new **access / refresh** pair  
-| POST   | `/auth/token/refresh`    | Exchange an expired access token + valid refresh token for a fresh pair  
-| POST   | `/auth/logout`           | Revoke **all** refresh-token sessions of a user  
-| GET    | `/auth/user/guid`        | Protected endpoint – returns user ID from a valid access token  
+## Описание Сервисов (Service Layer)
 
-refresh_token — это ключ к сессии
-При выдаче пары токенов сервер сохраняет связь между access_token и refresh_token (например, в базе данных или в зашифрованном виде внутри самого refresh_token).
-При обновлении достаточно только refresh_token
+Слой бизнес-логики инкапсулирует основные операции системы.
 
+### `AuthService`
 
-Клиент, который хочет использовать OAuth-сервер, регистрируется и получает свой `client_id` и `client_secret`.  
-client_id позволяет быстро найти client_secret, а client_secret подтверждает подлинность.  
-Это стандарт OAuth 2.0 (RFC 6749)
+**Оркестратор аутентификации.** Связывает все части вместе:
 
-ClientID + ClientSecret и привязка по IP/UA решают разные задачи и дают разный уровень доверия.
-    1. IP + User-Agent - гарантирует обращение пришло с того же браузера/мобилки, что и раньше.
-        IP может смениться, UA легко подделать, заголовки могут быть потеряны
+- **`IssueTokens`**: Управляет процессом выпуска новой пары токенов.
+- **`RefreshTokens`**: Реализует логику ротации и защиты от кражи refresh-токенов.
+- **`Logout`**: Обеспечивает полный выход из системы (отзыв access и refresh токенов).
+- **`AuthenticateAccessToken`**: Проверяет access-токен для middleware.
 
-    2. ClientID + ClientSecret - Однозначно определяет приложение (back, мобилк, партнёрский сервис).
-        Позволяет: выдавать разные лимиты и ttl, ставить приоритет, отзsвать доступ.
+### `TokenService`
+
+**Фабрика токенов.** Отвечает за криптографию и жизненный цикл токенов.
+
+- **Создание**: Генерирует подписанные JWT (access) и компоненты `selector`/`verifier` (refresh).
+- **Валидация**: Проверяет подписи, сроки жизни и **черный список (denylist)** для access-токенов.
+- **Отзыв**: Помещает access-токены в denylist в Redis.
+
+### `APIKeyService`
+
+**Управление ключом API.** Обеспечивает безопасную S2S (service-to-service) аутентификацию.
+
+- **`IsValidAPIKey`**: Проверяет предоставленный `X-API-Key`.
+- **`SyncAPIKey`**: Реализует **бесшовную ротацию** ключа при перезапуске сервиса, используя "льготный период" для старого ключа.
+
+Base URL: `/api/v1`
+
+### Выдача новой пары токенов
+
+- **Endpoint**: `POST /auth/tokens`
+- **Описание**: Создает и возвращает новую пару `access` и `refresh` токенов для пользователя. Если пользователь с указанным `guid` не найден, будет создан новый.
+- **Аутентификация**: Требует `X-API-Key` в заголовке. Этот ключ должен быть известен только доверенным клиентам (например, API Gateway)
+
+### Обновление пары токенов
+
+- **Endpoint**: `POST /auth/tokens/refresh`
+- **Описание**: Обменивает валидный `refresh_token` на новую пару `access` и `refresh` токенов. Реализует механизм **Token Rotation**.
+- **Аутентификация**: Требует `access_token` (может быть просроченным) в заголовке `Authorization` и `refresh_token` в `http-only` cookie.
+- **Ответы**:
+  - `200 OK`: Успешное обновление.
+  - `401 Unauthorized`: Если refresh-токен невалиден, просрочен или отсутствует.
+
+### Деавторизация пользователя (Logout)
+
+- **Endpoint**: `POST /auth/logout`
+- **Описание**: Немедленно отзывает текущий `access_token` (добавляя его в denylist) и удаляет все `refresh_token` сессии пользователя из базы данных.
+- **Аутентификация**: Требует валидный `access_token`.
+- **Ответы**:
+  - `204 No Content`: Успешный выход.
+  - `401 Unauthorized`: Если access-токен невалиден.
+
+### Получение GUID пользователя
+
+- **Endpoint**: `GET /auth/user/guid`
+- **Описание**: Возвращает публичный `guid` пользователя, которому принадлежит `access_token`.
+- **Аутентификация**: Требует валидный `access_token`.
+- **Ответы**:
+  - `200 OK`: Успешное получение GUID.
+  - `401 Unauthorized`: Если access-токен невалиден, просрочен или отозван.
+
+## Middleware
+
+1.  **Логирование**
+2.  **Rate Limiter**: Ограничивает число запросов с одного IP для защиты от брутфорса.
+    - **Алгоритм**: Sliding window, реализован на Redis (Lua) для атомарности.
+    - **Настройки**: `RATE_LIMIT_LIMIT`, `RATE_LIMIT_INTERVAL`, `RATE_LIMIT_BLOCK_TIME`.
+    - **Ответ**: `429 Too Many Requests` с заголовком `Retry-After`.
+3.  **Валидация OpenAPI и Аутентификация**: проверяет каждый запрос на соответствие спецификации `openapi.yaml` + выполняет аутентификацию, вызывая кастомный `Authenticator`, который проверяет либо `X-API-Key`, либо `Bearer` access-токен
+
+## БД
+
+- **`users`**:
+
+  - `id (BIGSERIAL)`: Внутренний, автоинкрементный ID
+  - `guid (UUID)`: Внешний, публичный идентификатор пользователя
+
+- **`sessions`**:
+  - `user_id`: Внешний ключ к `users.id`
+  - `selector (TEXT)`: Уникальный селектор для поиска сессии
+  - `verifier_hash (TEXT)`: Хеш верификации токена
+  - `status (TEXT)`: Статус сессии
+
+#### Оптимизация (Индексы)
+
+- `CREATE INDEX ON sessions (selector)`
+
+  - Поиск сессии по refresh-токену
+
+- `CREATE INDEX ON sessions (user_id)`
+  - Ускоряет удаление всех сессий пользователя
+
+## Безопасность
+
+### 1. Безопасное хранение Refresh Токенов (Selector/Verifier)
+
+- **Формат токена**: `часть_для_поиска.секретная_часть` (`selector.verifier`)
+- **Selector**: Публичная, случайная строка. Используется как "логин" для поска сессии в базе данных (`WHERE selector = ?`) - хранится в БД
+- **Verifier**: Секретная, случайная строка. Клиент отправляет ее на сервер. Сервер **хэширует** полученный `verifier` и сравнивает его с **хэшем** - `verifier_hash`
+
+### 2. Ротация Refresh Токенов
+
+- При каждом обновлении пары токенов (`/auth/tokens/refresh`) старый refresh-токен помечается как использованный, и клиенту выдается **новая пара** access и refresh токенов
+
+- При попытке использовать "использованный" refresh-токен - **все активные сессии юзера отзываются**
+
+### 3. Отзыв Access Токенов (Server-Side Logout)
+
+- При вызове `POST /auth/logout` Idшник access-токена помещается в **черный список (denylist)** в Redis
+- Любая попытка использовать токен будет отклонена middleware, даже если его срок жизни (`exp`) еще не истек
+
+### 4. Ротация API-ключа (X-API-Key)
+
+Замена API-ключа производится без остановки (zero-downtime)
+
+**Процесс замены:**
+
+1.  Обновить переменную `AUTH_SERVICE_API_KEY`
+2.  Перезапустить сервис
+3.  Механизм ротации (`SyncAPIKey`):
+    - При старте сервис сравнивает хэш нового ключа из переменной окружения с хэшем текущего ключа в Redis (`apikey:current`)
+    - Если они не совпадают, хеш старого ключа перемещается в `apikey:old` с TTL (24 часа)
+    - Хэш нового ключа становится `apikey:current`
+4.  В течение 24 часов система будет принимать запросы как со старым, так и с новым API-ключом.
+
+### 5. Webhook-уведомления
+- **Событие**: Смена IP-адреса при обновлении токена (`/auth/tokens/refresh`).
+- **Действие**: Отправляет `POST` запрос на `WEBHOOK_URL`.
+- **Payload**: `user_id`, `old_ip`, `new_ip`, `user_agent`.
+- **Настройка**: Переменная окружения `WEBHOOK_URL`.

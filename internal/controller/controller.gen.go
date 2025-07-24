@@ -21,12 +21,7 @@ import (
 
 const (
 	ApiKeyAuthScopes = "ApiKeyAuth.Scopes"
-	BasicAuthScopes  = "BasicAuth.Scopes"
-)
-
-// Defines values for RefreshTokensFormdataBodyGrantType.
-const (
-	RefreshToken RefreshTokensFormdataBodyGrantType = "refresh_token"
+	BearerAuthScopes = "BearerAuth.Scopes"
 )
 
 // ErrorResponse defines model for ErrorResponse.
@@ -34,21 +29,9 @@ type ErrorResponse struct {
 	Reason string `json:"reason"`
 }
 
-// LogoutRequest defines model for LogoutRequest.
-type LogoutRequest struct {
-	UserId openapi_types.UUID `json:"user_id"`
-}
-
-// TokenPairResponse defines model for TokenPairResponse.
-type TokenPairResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-// TokenRefreshRequest defines model for TokenRefreshRequest.
-type TokenRefreshRequest struct {
-	AccessToken  *string `json:"access_token,omitempty"`
-	RefreshToken string  `json:"refresh_token"`
+// TokensResponse defines model for TokensResponse.
+type TokensResponse struct {
+	AccessToken string `json:"access_token"`
 }
 
 // UserGUIDResponse defines model for UserGUIDResponse.
@@ -58,27 +41,8 @@ type UserGUIDResponse struct {
 
 // IssueTokensParams defines parameters for IssueTokens.
 type IssueTokensParams struct {
-	// UserId GUID пользователя
-	UserId openapi_types.UUID `form:"user_id" json:"user_id"`
+	Guid openapi_types.UUID `form:"guid" json:"guid"`
 }
-
-// RefreshTokensFormdataBody defines parameters for RefreshTokens.
-type RefreshTokensFormdataBody struct {
-	GrantType    RefreshTokensFormdataBodyGrantType `form:"grant_type" json:"grant_type"`
-	RefreshToken string                             `form:"refresh_token" json:"refresh_token"`
-}
-
-// RefreshTokensFormdataBodyGrantType defines parameters for RefreshTokens.
-type RefreshTokensFormdataBodyGrantType string
-
-// LogoutJSONRequestBody defines body for Logout for application/json ContentType.
-type LogoutJSONRequestBody = LogoutRequest
-
-// RefreshTokensJSONRequestBody defines body for RefreshTokens for application/json ContentType.
-type RefreshTokensJSONRequestBody = TokenRefreshRequest
-
-// RefreshTokensFormdataRequestBody defines body for RefreshTokens for application/x-www-form-urlencoded ContentType.
-type RefreshTokensFormdataRequestBody RefreshTokensFormdataBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -86,10 +50,10 @@ type ServerInterface interface {
 	// (POST /auth/logout)
 	Logout(ctx echo.Context) error
 	// Выдать новую пару токенов для пользователя
-	// (POST /auth/token/issue)
+	// (POST /auth/tokens)
 	IssueTokens(ctx echo.Context, params IssueTokensParams) error
 	// Обновить пару токенов
-	// (POST /auth/token/refresh)
+	// (POST /auth/tokens/refresh)
 	RefreshTokens(ctx echo.Context) error
 	// Получить GUID текущего пользователя
 	// (GET /auth/user/guid)
@@ -105,7 +69,7 @@ type ServerInterfaceWrapper struct {
 func (w *ServerInterfaceWrapper) Logout(ctx echo.Context) error {
 	var err error
 
-	ctx.Set(BasicAuthScopes, []string{})
+	ctx.Set(BearerAuthScopes, []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.Logout(ctx)
@@ -120,11 +84,11 @@ func (w *ServerInterfaceWrapper) IssueTokens(ctx echo.Context) error {
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params IssueTokensParams
-	// ------------- Required query parameter "user_id" -------------
+	// ------------- Required query parameter "guid" -------------
 
-	err = runtime.BindQueryParameter("form", true, true, "user_id", ctx.QueryParams(), &params.UserId)
+	err = runtime.BindQueryParameter("form", true, true, "guid", ctx.QueryParams(), &params.Guid)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter user_id: %s", err))
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter guid: %s", err))
 	}
 
 	// Invoke the callback with all the unmarshaled arguments
@@ -136,7 +100,7 @@ func (w *ServerInterfaceWrapper) IssueTokens(ctx echo.Context) error {
 func (w *ServerInterfaceWrapper) RefreshTokens(ctx echo.Context) error {
 	var err error
 
-	ctx.Set(ApiKeyAuthScopes, []string{})
+	ctx.Set(BearerAuthScopes, []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.RefreshTokens(ctx)
@@ -147,7 +111,7 @@ func (w *ServerInterfaceWrapper) RefreshTokens(ctx echo.Context) error {
 func (w *ServerInterfaceWrapper) GetUserGUID(ctx echo.Context) error {
 	var err error
 
-	ctx.Set(BasicAuthScopes, []string{})
+	ctx.Set(BearerAuthScopes, []string{})
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.GetUserGUID(ctx)
@@ -183,8 +147,8 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 	}
 
 	router.POST(baseURL+"/auth/logout", wrapper.Logout)
-	router.POST(baseURL+"/auth/token/issue", wrapper.IssueTokens)
-	router.POST(baseURL+"/auth/token/refresh", wrapper.RefreshTokens)
+	router.POST(baseURL+"/auth/tokens", wrapper.IssueTokens)
+	router.POST(baseURL+"/auth/tokens/refresh", wrapper.RefreshTokens)
 	router.GET(baseURL+"/auth/user/guid", wrapper.GetUserGUID)
 
 }
@@ -192,26 +156,25 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8xX227bRhN+lcX+/4UDUIc0udKdg7aBml4YToIWcA2DpsYWU4mkd5d2BUOADkWTwEED",
-	"GLlNArQvQKsRrNiV/Aqzr9AnKWZJWidKTgo78N2SnN2dw/d9Mzzkjl8PfA88JXnpkEunCnXbLL8Rwhfr",
-	"IAPfk0AvAuEHIJQL5rMAW/oerVQjAF7iUgnX2+XNpsUF7IWugAovbaR2m1Zq528/A0fxpsW/93f9UK3D",
-	"XghSzd8QShBbboWWO76o24qXeBi6FW5dcWW6MevOJ/7P4K3Z7pLIbMcBKbcUWWbER3ftCJDVhRYz7kyd",
-	"N7t7oY/rsdnC7Fy3l1e79VSCePi0/PXizN1AxZoWl+CEwlWNx4TN+KLVwH0EjdVQVenJ9XiJV8GugOAW",
-	"9+w6HfBjbnWtnHsEjfHlttlFoTywpeuk2w3m6fs2vR2bV5UKjDHYAkRqvW2evk3D++6HJ9yaOMJ8nT2D",
-	"onC9HZ/2V0A6wg2US+Thq2tlhh/wXL9mGOmu7mAfh7qDA/0rDvAMI/0bDnDA8AJHeK5f4SmOsIeRMTzH",
-	"Pn5kK9jTR/gBI/0cI4vhCE9waKzo+xAH2Ke3uoOn+gh7THdwhGfm0wh7Vnp0Vz9PzRlV+U7+J0KrclWN",
-	"AqHw2WMQ+64DbHWtzC2+D0LGUdzNF/NFSpUfgGcHLi/xe/li/h63eGCrqilZwQ5VtVAzlDfI8WNUT+cD",
-	"/6RIKB/Y1x2GPd3GPkuwmaMH3dbtJSnRr9nKwmDv5BkeszR37J/WG5YgLw6WsGyTJ+UKLyXyxGOkglQP",
-	"/EqDPHZ8T4FnnLeDoOY6ZkvhWSKHsYTS6v8CdniJ/68w1thCIrCFae1rThNCiRDMi5hoJn9fFe9npUu3",
-	"8QL7+gUFSBW4Xyxem4/THcD4OHP9W+zjGY50S7dopTs41Ef4keEpRnihWzjS7ZjDYb1uiwbteYN9jLBH",
-	"ldEtHJApgZwYsKCi5oQYP0adCq6UISwB0TGO8BR7uoWRfolRDCWDAN3Vv9M9kW7pLos1tJDAawYsl7xc",
-	"hDPdZrpLHDXRDk3ofxvuZKGpTD4bZZeGFsKugwIheWlj1n86YnEyrFjv9kIQjbHcpQo6CyNrotZXafLm",
-	"HOSuD0vzfTcLT++pMBjNVSJROBxidJtBnjQqU9LJFrWxSbmd4MBxotgd/SoTmJ+HxDl+JIBewpB34yaR",
-	"SO1CLugjczGbGhDyDP8w6TjRXbPddFRmusSKU3PBU1tupZCsJDgC1J0sWiRjziUxbkJrs+YpStnkib/k",
-	"Dg4OcsSQXChq4Dl+BSrTV0zPOrvC9tRWTKFDDl5YXzZF/eexbOKaq0fHT+kit4XSs2PKrSU2eXX3C3r1",
-	"Tr/AAZ5QY1k6E36m5IwZP4hlJ1trJrSEWkphN4zn+V341Ea7tHvFUhJrTW5CY7psJR6zM0XiIaj054Pf",
-	"IKDnfnAyyrO8N39xsLydG6aMQzicnbreXw75cflNHMbvM93VL7GPf+FoWYeZBdvEL1SCNRD76TwTihov",
-	"8QL9CjQ3m/8GAAD//8ncGUtlEAAA",
+	"H4sIAAAAAAAC/8xWzW7bxhN/lcX+/wcHoEW5SS+8uWgbqOnByAdawDUChlpbTCyS2V0aUA0B+ijqBA5i",
+	"wOi1MdC+AK2GsCJH8ivMvFExS9KyTUmugdbwjdLO7uzM72N2l3thMwoDEWjFnV2uvIZouubzGylD+Vio",
+	"KAyUoD8iGUZCal+YZSlcFQb0pVuR4A5XWvrBFm+3LS7F69iXos6d9SJuwyriwhcvhad52+JPw1ciUPNT",
+	"uJ4nlHquKez6RJeiZ6V7poR8+Kz29fyEsRLyuV+nz81QNl3NHR7Hfp1b1+QuNpbTti2uhBdLX7eeUG+z",
+	"RKuR/0i0VmPdoF9+wB3eEG5dSG7xwG3SAT8ur67Vlh+J1jS5a3ZRKV8JVwpZ7H9hfn1b3Pi7H55yK0OS",
+	"dmWr01MaWke8TRfzg82Q9teF8qQfaZ/w5KtrNQYf4RQPGCTYxx6kMMYeDPEXGMIIEvwVhjBkcAYTOMV3",
+	"cAITGEBiAk8hhU9sCQa4Dx8hwT1ILAYTOIaxiaL1MQwhpX+xBye4DwOGPZjAyCxNYGAVR/dxrwhnBNy9",
+	"yk8B1eHrbSqEymdPhNzxPcFW12rc4jtCqqyKlUq1UqVWhZEI3MjnDr9fqVbuc4tHrm4YFGw31g17O9wK",
+	"Y23IECpd7gf8SZVQPyDFHoMBdiFlUmxKoRrL9AO72F3QEjxgS3OLzWsiFrqUsFbnDv8+uxJxLKOque4X",
+	"1QezboddOIMU39B5VPCD6gqFeWGgRWDqcaNo2/fM8fbLXLSZ0Onr/1Jscof/z546gZ3bgH3ZAwxprqT/",
+	"HVJIYEBFYQeGReUwvkR97qzvXiLt+kZ7w+IqbjZd2aJzfiudY3hGJJzTVJMgg9BoXi2A8BAmcAID7ECC",
+	"byHJgDT9xz6+pxQJdrDPMg+xc3CvQHWuinkoY5dhnxRCt4cxjHEfPhvmVhj8gR1I4Rj7JrkR2QhO8T3u",
+	"zWJATalYZP5oGCvdptBCKtNI4xevYyFbU7vYymxqakpaxsK6APN1hrZRYlv1X6PRFaOfxaMjQgCSUstz",
+	"I4ExJBm5q7dM7hER0mA3wp6B9BMz+J5hBybYvX3JfcA3MIRjItpih16CMaQwgBQ7+cUv0u5eWaEXx1JJ",
+	"oYe5pffw3Uzt3EwsJfUWolug4g/TMZKb8Vy94n6FwZFxEpofn3PNn7v2eSAjr2E0E5fDYLvFvDB85QuL",
+	"QZIfXoo14P9FVZmrEArUsVD6Pxu8Z8n5cZb3XNB3UWlXh3Ryd5l9w9ky5c0wY+9syl6gJL3nbGOpzi7f",
+	"Ev90pJDVzx8PtFAmFfbZUnb7mU+Bh0IX79b/kjelt/EMeBZWd6deHhb/8lbnxCHBiD0zJWjsHxDakwtk",
+	"Nq/ETm7FyQ3pe3T+GM7oa3AwfR9hH99CSm60yGhNNrlTPB9iuc0dbruRb++s8PZG++8AAAD//zvENQUF",
+	"DgAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -8,14 +8,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
 	middleware "github.com/oapi-codegen/echo-middleware"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/rryowa/medods_dvortsov/internal/controller"
-	"github.com/rryowa/medods_dvortsov/internal/storage"
+	"github.com/rryowa/medods_dvortsov/internal/service"
 	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
@@ -24,14 +26,17 @@ const (
 )
 
 type API struct {
-	server           *echo.Echo
-	controller       *controller.Controller
-	log              *zap.SugaredLogger
-	gracefulTimeout  time.Duration
-	apiKeyRepository storage.APIKeyRepository
+	server          *echo.Echo
+	controller      *controller.Controller
+	authService     *service.AuthService
+	apiKeyService   *service.APIKeyService
+	rdb             *redis.Client
+	log             *zap.SugaredLogger
+	gracefulTimeout time.Duration
+	shutdownFuncs   []func()
 }
 
-func NewAPI(c *controller.Controller, l *zap.SugaredLogger, sc *util.ServerConfig, apiKeyRepository storage.APIKeyRepository) *API {
+func NewAPI(c *controller.Controller, authService *service.AuthService, rdb *redis.Client, aks *service.APIKeyService, sc *util.ServerConfig, l *zap.SugaredLogger, shutdownFuncs []func()) *API {
 	e := echo.New()
 
 	e.Server.Addr = sc.ServerAddr
@@ -41,11 +46,14 @@ func NewAPI(c *controller.Controller, l *zap.SugaredLogger, sc *util.ServerConfi
 	e.HTTPErrorHandler = ErrorHandler(l)
 
 	return &API{
-		server:           e,
-		controller:       c,
-		log:              l,
-		gracefulTimeout:  sc.GracefulTimeout,
-		apiKeyRepository: apiKeyRepository,
+		server:          e,
+		controller:      c,
+		authService:     authService,
+		log:             l,
+		gracefulTimeout: sc.GracefulTimeout,
+		rdb:             rdb,
+		apiKeyService:   aks,
+		shutdownFuncs:   shutdownFuncs,
 	}
 }
 
@@ -57,19 +65,35 @@ func (a *API) Run(ctxBackground context.Context) {
 	if err != nil {
 		a.log.Fatalf("Failed to load OpenAPI specification: %v", err)
 	}
-	swagger.Servers = nil
 
-	a.server.Use(APIKeyAuthMiddleware(a.apiKeyRepository))
-	a.server.Use(echomiddleware.RequestLoggerWithConfig(GetLoggerMiddlewareConfig(a)))
+	rateLimiterConfig := util.NewRateLimiterConfig()
 
-	g := a.server.Group("/api")
-	g.Use(middleware.OapiRequestValidator(swagger))
-	/* Сгенерированный код сетапит маршруты OpenAPI и
-	передает обработку запросов в методы из controller.gen.go.
-	ServerInterfaceWrapper оборачивает методы контроллера и
-	вызывает их, когда приходит соответствующий запрос.
+	a.server.Use(echomiddleware.RequestLoggerWithConfig(LoggerMiddlewareConfig(a)))
+	a.server.Use(RateLimiter(a.rdb, a.log, rateLimiterConfig))
+
+	/*
+		Сгенерированный код сетапит маршруты OpenAPI и
+		передает обработку запросов в методы из controller.gen.go.
+		ServerInterfaceWrapper оборачивает методы контроллера и
+		вызывает их, когда приходит соответствующий запрос.
 	*/
-	controller.RegisterHandlersWithBaseURL(a.server, a.controller, "/api")
+	openAPIWrapper := controller.ServerInterfaceWrapper{Handler: a.controller}
+
+	// handle API key OR bearer token
+	authenticator := NewAuthenticator(a.authService, a.apiKeyService)
+
+	// OpenAPI request validator
+	validatorOptions := &middleware.Options{
+		Options: openapi3filter.Options{
+			AuthenticationFunc: authenticator,
+		},
+	}
+	validator := middleware.OapiRequestValidatorWithOptions(swagger, validatorOptions)
+
+	v1 := a.server.Group("/api/v1")
+	v1.Use(validator)
+
+	controller.RegisterHandlers(v1, openAPIWrapper.Handler)
 
 	a.ListenGracefulShutdown(ctx)
 }
@@ -93,6 +117,12 @@ func (a *API) ListenGracefulShutdown(ctx context.Context) {
 	err := a.server.Shutdown(shutdownCtx)
 	if err != nil {
 		a.log.Errorf("shutdown: %v", err)
+	}
+
+	// После остановки сервера, офаем БД и Redis
+	// ыql.DB.Close() ждет пока запросы обработаются
+	for _, f := range a.shutdownFuncs {
+		f()
 	}
 
 	longShutdown := make(chan struct{}, 1)

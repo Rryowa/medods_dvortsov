@@ -22,7 +22,6 @@ func NewZapLogger() *zap.SugaredLogger {
 
 	logger := zap.New(core,
 		zap.AddCaller(),
-		zap.AddCallerSkip(0),
 		zap.AddStacktrace(zap.ErrorLevel),
 	)
 

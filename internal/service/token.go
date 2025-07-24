@@ -1,10 +1,16 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,17 +19,24 @@ import (
 	"github.com/rryowa/medods_dvortsov/internal/util"
 )
 
+type TokenStorage interface {
+	InvalidateToken(ctx context.Context, token string, expiration time.Duration) error
+	IsTokenInvalidated(ctx context.Context, token string) (bool, error)
+}
+
 type TokenService struct {
 	JwtSecretKey []byte
 	accessTTL    time.Duration
 	refreshTTL   time.Duration
+	tokenStorage TokenStorage
 }
 
-func NewTokenService(cfg *util.TokenConfig) *TokenService {
+func NewTokenService(cfg *util.TokenConfig, tokenStorage TokenStorage) *TokenService {
 	return &TokenService{
 		JwtSecretKey: cfg.JwtSecretKey,
 		accessTTL:    cfg.AccessTTL,
 		refreshTTL:   cfg.RefreshTTL,
+		tokenStorage: tokenStorage,
 	}
 }
 
@@ -33,112 +46,97 @@ type jwtClaims struct {
 }
 
 var (
-	ErrTokenExpired               = errors.New("token expired")
-	ErrTokenInvalid               = errors.New("token invalid")
-	ErrTokenRevoked               = errors.New("token revoked")
-	ErrInvalidUserID              = errors.New("invalid userID")
-	ErrInvalidSigningMethod       = errors.New("invalid signing method")
-	ErrRefreshTokenNotFoundOrUsed = errors.New("refresh token not found or already used")
+	ErrTokenExpired         = errors.New("token expired")
+	ErrTokenInvalid         = errors.New("token invalid")
+	ErrTokenMalformed       = errors.New("token is malformed")
+	ErrTokenRevoked         = errors.New("token revoked")
+	ErrInvalidUserID        = errors.New("invalid userID")
+	ErrInvalidSigningMethod = errors.New("invalid signing method")
 )
 
-// CreateAccessToken создает SHA512 signed access токен
-//
-//   - Записывает bcrypt токен в бд
-//   - Возвращает signed access токен в формате JWT
-//
-// Формат токена - JWT.
-// Алгоритм для подписи токена - SHA512.
-// Хранить токен в базе строго запрещено.
-func (ts *TokenService) CreateAccessToken(userID string, now time.Time) (string, error) {
+// CreateAccessToken создает SHA512 signed access токен с новым JTI.
+func (ts *TokenService) CreateAccessToken(userID int64, now time.Time) (string, string, error) {
+	jti := uuid.NewString()
+	signedToken, err := ts.CreateAccessTokenWithJTI(userID, now, jti)
+	if err != nil {
+		return "", "", err
+	}
+	return signedToken, jti, nil
+}
+
+// CreateAccessTokenWithJTI создает SHA512 signed access токен с предоставленным JTI.
+func (ts *TokenService) CreateAccessTokenWithJTI(userID int64, now time.Time, jti string) (string, error) {
 	claims := &jwtClaims{
-		UserID: userID,
+		UserID: strconv.FormatInt(userID, 10),
 		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        uuid.NewString(),
-			Subject:   userID,
+			ID:        jti,
+			Subject:   strconv.FormatInt(userID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ts.accessTTL)),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
-	return token.SignedString(ts.JwtSecretKey)
-}
-
-// CreateRefreshToken создает refresh токен
-//
-//	Возвращает:
-//	  - refresh токен в формате base64
-//	  - bcrypt хеш токена
-//	  - ошибку
-//
-// Формат токена - произвольный.
-// Передаваться токен должен только в формате `base64`.
-// Хранить токен в базе строго в виде `bcrypt` хеша.
-// Токен должен быть защищен от повторного использования.
-// Токен должен быть защищен от изменений на стороне клиента.
-func (ts *TokenService) CreateRefreshToken(userID string, now time.Time) (string, error) {
-	tokenBytes := make([]byte, 32) // 256 бит
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to read random bytes: %w", err)
+	signedToken, err := token.SignedString(ts.JwtSecretKey)
+	if err != nil {
+		return "", err
 	}
 
-	// base64 без паддинга т.к. `=` может быть некорректно обработан
-	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
-
-	return token, nil
+	return signedToken, nil
 }
 
-// ValidateRefreshToken проверяет refresh токен
-//
-//   - Декодирует токен из base64
-//   - Сравнивает с хэшем в базе
-//   - Возвращает true, если токен валидный, иначе false
-// func (ts *TokenService) ValidateRefreshToken(token string) error {
-// 	storedHash, expiresAt, err := ts.sessionManager.GetRefreshToken(receivedToken)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get refresh token: %w", err)
-// 	}
-//
-// 	if expiresAt.Before(time.Now()) {
-// 		return ErrTokenExpired
-// 	}
-//
-// 	receivedToken, err := base64.RawURLEncoding.DecodeString(receivedToken)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to decode refresh token: %w", err)
-// 	}
-//
-// 	err = bcrypt.CompareHashAndPassword(storedHash, receivedToken)
-// 	if err != nil {
-// 		return ErrTokenInvalid
-// 	}
-//
-// 	return nil
-// }
+func (ts *TokenService) CreateRefreshToken(now time.Time) (token, selector, verifierHash string, err error) {
+	rawToken := make([]byte, 32)
+	if _, err = rand.Read(rawToken); err != nil {
+		return "", "", "", fmt.Errorf("failed to read random bytes: %w", err)
+	}
 
-// ValidateAndGetUserID - для строгой валидации (аутентификация)
-func (ts *TokenService) ValidateAccessTokenAndGetUserID(token string) (string, error) {
-	return ts.getUserID(token, true)
+	selector = base64.RawURLEncoding.EncodeToString(rawToken[:16])
+	verifier := base64.RawURLEncoding.EncodeToString(rawToken[16:])
+
+	hashedVerifierBytes := sha256.Sum256([]byte(verifier))
+	verifierHash = hex.EncodeToString(hashedVerifierBytes[:])
+
+	token = selector + "." + verifier
+
+	return token, selector, verifierHash, nil
 }
 
-// ValidateAndGetUserIDFromExpired - не строгая валидация (обновление токена)
-//
-//	Когда access token истекает, клиент отправляет refresh token для получения новой пары
-//	В таком случае нам надо извлечь userID из expired токена
-func (ts *TokenService) ValidateAndGetUserIDFromExpired(token string) (string, error) {
-	return ts.getUserID(token, false)
+func (ts *TokenService) ValidateRefreshToken(token, verifierHash string) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return errors.New("invalid token format")
+	}
+
+	verifier := parts[1]
+
+	hashedVerifierBytes, err := hex.DecodeString(verifierHash)
+	if err != nil {
+		return fmt.Errorf("failed to decode stored hash: %w", err)
+	}
+
+	newHashBytes := sha256.Sum256([]byte(verifier))
+
+	if subtle.ConstantTimeCompare(newHashBytes[:], hashedVerifierBytes) != 1 {
+		return errors.New("invalid refresh token")
+	}
+
+	return nil
 }
 
-func (ts *TokenService) getUserID(token string, strict bool) (string, error) {
+func (ts *TokenService) ValidateAccessTokenAndGetUserID(ctx context.Context, token string) (int64, error) {
+	isInvalidated, err := ts.IsAccessTokenInvalidated(ctx, token)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check if token is invalidated: %w", err)
+	}
+	if isInvalidated {
+		return 0, ErrTokenRevoked
+	}
+
 	opts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS512.Alg()}),
 		jwt.WithLeeway(5 * time.Second),
-	}
-
-	if strict {
-		opts = append(opts, jwt.WithExpirationRequired())
-	} else {
-		opts = append(opts, jwt.WithoutClaimsValidation())
+		jwt.WithExpirationRequired(),
 	}
 
 	parsedToken, err := jwt.ParseWithClaims(
@@ -153,26 +151,53 @@ func (ts *TokenService) getUserID(token string, strict bool) (string, error) {
 		opts...,
 	)
 	if err != nil {
-		return "", err
+		return 0, fmt.Errorf("parse token claims: %w", err)
 	}
 
-	if parsedToken == nil || (strict && !parsedToken.Valid) {
-		return "", ErrTokenInvalid
+	if parsedToken == nil || !parsedToken.Valid {
+		return 0, ErrTokenInvalid
 	}
 
 	claims, ok := parsedToken.Claims.(*jwtClaims)
 	if !ok || claims.UserID == "" {
-		return "", ErrTokenInvalid
+		return 0, ErrTokenInvalid
 	}
 
-	return claims.UserID, nil
+	userID, err := strconv.ParseInt(claims.UserID, 10, 64)
+	if err != nil {
+		return 0, ErrInvalidUserID
+	}
+
+	return userID, nil
 }
 
-// TODO: Implement
-// func (ts *TokenService) RevokeToken(jti string, expiry time.Duration) error {
-// 	ctx := context.Background()
+func (ts *TokenService) InvalidateAccessToken(ctx context.Context, accessToken string) error {
+	claims, err := ts.getClaimsFromToken(accessToken)
+	if err != nil {
+		return fmt.Errorf("get claims from token: %w", err)
+	}
 
-// 	// ключ с TTL = времени жизни токена
-// 	// (автоматически удалится после истечения срока)
-// 	return rdb.Set(ctx, "revoked:"+jti, "1", expiry).Err()
-// }
+	expiration := time.Until(claims.ExpiresAt.Time)
+
+	return ts.tokenStorage.InvalidateToken(ctx, accessToken, expiration)
+}
+
+// IsAccessTokenInvalidated проверяет, находится ли токен в черном списке.
+// Это первый шаг валидации токена, до проверки подписи и срока действия.
+func (ts *TokenService) IsAccessTokenInvalidated(ctx context.Context, accessToken string) (bool, error) {
+	return ts.tokenStorage.IsTokenInvalidated(ctx, accessToken)
+}
+
+func (ts *TokenService) getClaimsFromToken(token string) (*jwtClaims, error) {
+	parsedToken, _, err := new(jwt.Parser).ParseUnverified(token, &jwtClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrTokenMalformed, err)
+	}
+
+	claims, ok := parsedToken.Claims.(*jwtClaims)
+	if !ok {
+		return nil, errors.New("invalid token claims")
+	}
+
+	return claims, nil
+}

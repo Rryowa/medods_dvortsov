@@ -5,78 +5,57 @@ info:
   description: |
     API для аутентификации пользователей (выдача, обновление, отзыв токенов, получение GUID).
 servers:
-  - url: /api
-security:
-  - BasicAuth: []
+  - url: /api/v1
 paths:
-  /auth/token/issue:
+  /auth/tokens:
     post:
       operationId: IssueTokens
       summary: Выдать новую пару токенов для пользователя
       description: |
-        Возвращает новую пару access/refresh токенов для пользователя с указанным GUID.
+        Возвращает новую пару access/refresh токенов для пользователя с указанным GUID. Требует API ключ.
       security:
         - ApiKeyAuth: []
       parameters:
-        - name: user_id
+        - name: guid
           in: query
           required: true
           schema:
             type: string
             format: uuid
-          description: GUID пользователя
       responses:
         '200':
           description: Пара токенов выдана
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPairResponse'
+                $ref: '#/components/schemas/TokensResponse'
         '400':
           description: Некорректный запрос
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /auth/token/refresh:
+        '401':
+          description: Ошибка аутентификации (неверный API ключ)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/tokens/refresh:
     post:
       operationId: RefreshTokens
       summary: Обновить пару токенов
-      description: |
-        Обновляет access/refresh токены по refresh_token. Требует Basic Auth (client_id/client_secret).
       security:
-        - ApiKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TokenRefreshRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required:
-                - grant_type
-                - refresh_token
-              properties:
-                grant_type:
-                  type: string
-                  enum: [refresh_token]
-                refresh_token:
-                  type: string
+        - BearerAuth: []
+      description: |
+        Обновляет access/refresh токены. Принимает refresh-токен из http-only cookie, а access-токен из заголовка Authorization.
       responses:
         '200':
           description: Пара токенов обновлена
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPairResponse'
-        '400':
-          description: Некорректный запрос
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/TokensResponse'
         '401':
           description: Ошибка аутентификации
           content:
@@ -88,18 +67,14 @@ paths:
       operationId: Logout
       summary: Деавторизация пользователя
       description: |
-        Удаляет все refresh-сессии пользователя (отзыв токенов). В теле — user_id.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogoutRequest'
+        Удаляет все refresh-сессии пользователя (отзыв токенов).
+      security:
+        - BearerAuth: []
       responses:
         '204':
           description: Успешно
-        '400':
-          description: Некорректный запрос
+        '401':
+          description: Неавторизован
           content:
             application/json:
               schema:
@@ -110,7 +85,8 @@ paths:
       summary: Получить GUID текущего пользователя
       description: |
         Возвращает GUID пользователя по access-токену (Bearer).
-      
+      security:
+        - BearerAuth: []
       responses:
         '200':
           description: GUID пользователя
@@ -124,6 +100,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   securitySchemes:
@@ -131,46 +113,21 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-    BasicAuth:
-      type: http
-      scheme: basic
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
 
   schemas:
-    TokenPairResponse:
+    TokensResponse:
       type: object
       properties:
         access_token:
-          type: string
-        refresh_token:
           type: string
       required:
         - access_token
-        - refresh_token
-
-    TokenRefreshRequest:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-      required:
-        - refresh_token
 
     UserGUIDResponse:
-      type: object
-      properties:
-        user_id:
-          type: string
-          format: uuid
-      required:
-        - user_id
-
-    LogoutRequest:
       type: object
       properties:
         user_id:
@@ -185,4 +142,4 @@ components:
         reason:
           type: string
       required:
-        - reason 
+        - reason

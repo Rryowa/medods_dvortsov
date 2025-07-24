@@ -3,16 +3,21 @@ package util
 import (
 	"log"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
+var once sync.Once
+
 func init() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Failed to load .env: %v", err)
-	}
+	once.Do(func() {
+		if err := godotenv.Load(".env"); err != nil {
+			log.Printf("Warning: could not load .env file: %v", err)
+		}
+	})
 }
 
 const (
@@ -24,6 +29,10 @@ const (
 
 	defaultAccessTTL  = 15 * time.Minute
 	defaultRefreshTTL = 24 * time.Hour
+
+	defaultRateLimit     = 100
+	defaultRateInterval  = 1 * time.Minute
+	defaultRateBlockTime = 5 * time.Minute
 )
 
 type ServerConfig struct {
@@ -32,7 +41,6 @@ type ServerConfig struct {
 	ReadTimeout     time.Duration
 	IdleTimeout     time.Duration
 	GracefulTimeout time.Duration
-	
 }
 
 func NewServerConfig() *ServerConfig {
@@ -40,8 +48,6 @@ func NewServerConfig() *ServerConfig {
 	if addr == "" {
 		addr = defaultServerAddr
 	}
-
-	
 
 	return &ServerConfig{
 		ServerAddr:      addr,
@@ -68,6 +74,37 @@ func NewTokenConfig() *TokenConfig {
 		AccessTTL:    parseDurationOrDefault("ACCESS_TOKEN_TTL", defaultAccessTTL),
 		RefreshTTL:   parseDurationOrDefault("REFRESH_TOKEN_TTL", defaultRefreshTTL),
 	}
+}
+
+type RateLimiterConfig struct {
+	Limit     int
+	Interval  time.Duration
+	BlockTime time.Duration
+}
+
+func NewRateLimiterConfig() *RateLimiterConfig {
+	limitStr := os.Getenv("RATE_LIMIT_LIMIT")
+	limit := defaultRateLimit
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = l
+		} else {
+			log.Printf("Invalid RATE_LIMIT_LIMIT: %s, using default %d", limitStr, defaultRateLimit)
+		}
+	}
+
+	interval := parseDurationOrDefault("RATE_LIMIT_INTERVAL", defaultRateInterval)
+	blockTime := parseDurationOrDefault("RATE_LIMIT_BLOCK_TIME", defaultRateBlockTime)
+
+	return &RateLimiterConfig{
+		Limit:     limit,
+		Interval:  interval,
+		BlockTime: blockTime,
+	}
+}
+
+func GetWebhookURL() string {
+	return os.Getenv("WEBHOOK_URL")
 }
 
 func parseDurationOrDefault(varName string, def time.Duration) time.Duration {

@@ -2,14 +2,26 @@ package models
 
 import "time"
 
+const (
+	MwSchemeAPIKeyAuth = "ApiKeyAuth"
+	MwSchemeBearerAuth = "BearerAuth"
+
+	MwAPIKeyHeader = "X-API-Key"
+
+	MwUserIDKey = "userID"
+	MwTokenKey  = "token"
+)
+
 type RefreshSession struct {
-	ID           string    `json:"id"` // Stores the raw, base64 encoded refresh token
-	UserID       string    `json:"user_id"`
-	UserAgent    string    `json:"user_agent"`
-	ClientID     string    `json:"client_id"`
-	IPAddress    string    `json:"ip_address"`
-	CreatedAt    time.Time `json:"created_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	ID             int64     `json:"id"`
+	UserID         int64     `json:"user_id"`
+	Selector       string    `json:"selector"`
+	VerifierHash   string    `json:"verifier_hash"`
+	UserAgent      string    `json:"user_agent"`
+	IPAddress      string    `json:"ip_address"`
+	AccessTokenJTI string    `json:"access_token_jti"`
+	CreatedAt      time.Time `json:"created_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
 }
 
 type RefreshToken struct {
@@ -21,11 +33,10 @@ type RefreshToken struct {
 
 type UserMetadata struct {
 	UserAgent string `json:"user_agent"`
-	ClientID  string `json:"client_id"`
 	IPAddress string `json:"ip_address"`
 }
 
-type APIKey struct {
-	Key      string `json:"key"`
-	ClientID string `json:"client_id"`
+type User struct {
+	ID   int64  `json:"id"`
+	GUID string `json:"guid"`
 }

@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rryowa/medods_dvortsov/internal/service"
+	"github.com/rryowa/medods_dvortsov/internal/storage"
 )
 
 func ErrorHandler(log *zap.SugaredLogger) echo.HTTPErrorHandler {
@@ -20,7 +21,6 @@ func ErrorHandler(log *zap.SugaredLogger) echo.HTTPErrorHandler {
 			c.JSON(http.StatusUnauthorized, map[string]string{"reason": err.Error()})
 			return
 		}
-
 
 		he, ok := err.(*echo.HTTPError)
 		if ok {
@@ -41,5 +41,5 @@ func ErrorHandler(log *zap.SugaredLogger) echo.HTTPErrorHandler {
 func isUnauthorizedTokenError(err error) bool {
 	return errors.Is(err, service.ErrTokenExpired) ||
 		errors.Is(err, service.ErrTokenInvalid) ||
-		errors.Is(err, service.ErrRefreshTokenNotFoundOrUsed)
+		errors.Is(err, storage.ErrSessionNotFound)
 }
