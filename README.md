@@ -36,35 +36,58 @@ WEBHOOK_URL=http://localhost:9090
 
 ```mermaid
 graph TD
-    subgraph "API Layer (Presentation)"
-        A[API Middleware]
+    subgraph "User/API Gateway"
+        direction LR
+        User[Client]
+        Gateway(API Gateway)
+    end
+
+    subgraph "Presentation Layer (API)"
+        A[Middleware]
         B[Controller]
     end
 
-    subgraph "Service Layer (Business Logic)"
+    subgraph "Business Logic Layer (Service)"
         C[AuthService]
         D[APIKeyService]
         E[TokenService]
+        W[WebhookService]
     end
 
-    subgraph "Storage Layer (Data Access)"
-        F[storage.Storage]
-        G[storage.UserRepository]
-        H[storage.SessionRepository]
+    subgraph "Data Access Layer (Storage)"
+        F["storage.Storage\n(Interface)"]
+        F_PG["Postgres Storage\n(Users & Sessions)"]
+        F_RD["Redis TokenStorage\n(Denylist)"]
     end
 
-    subgraph "Infrastructure (DB/Cache)"
-        I[Postgres]
+    subgraph "Infrastructure"
+        I[PostgresDB]
         J[Redis]
+        K[External Webhook]
     end
 
-    %% Define Dependencies
-    A -- "Валидация через" --> C & D
-    A -- "Маршрутизация к" --> B
-    B -- "Использует" --> C & E
-    C -- "Зависит от" --> E & F
-    D -- "Зависит от" --> J
-    F -- "Реализован в" --> I
+    %% Dependencies
+    User -- "Access/Refresh Tokens" --> Gateway
+    Gateway -- "X-API-Key or Bearer" --> A
+
+    A -- "Rate Limit" --> J
+    A -- "Auth (API Key)" --> D
+    A -- "Auth (Bearer)" --> C
+    A -- "Routes to" --> B
+
+    B -- "Uses" --> C
+
+    C -- "Creates/Validates Tokens" --> E
+    C -- "Manages Users/Sessions" --> F
+    C -- "Notifies on IP change" --> W
+
+    D -- "Stores/Validates API Keys" --> J
+    E -- "Manages Denylist" --> F_RD
+    W -- "Sends POST" --> K
+
+    F -- "Implemented by" --> F_PG
+    F_PG -- "CRUD" --> I
+    F_RD -- "SET/GET" --> J
 ```
 
 - **API Layer**: прием HTTP, валидация, передача в слой бизнес-логики
